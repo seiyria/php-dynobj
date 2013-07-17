@@ -8,7 +8,11 @@ These variables needs to be defined before using DBObject:
 
 One approach is to include this information in a separate, included PHP file.
 */
-
+/*
+    TODO:
+        make $db static
+        dispose the database connection?
+*/
 $db = new PDO("mysql:host=$location;dbname=$database", $username, $password);
 $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $db->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
@@ -18,6 +22,8 @@ class DBObject
     private $id = 0;
     private $table;
     private $fields = array();
+
+    public $isDirty = false;
 
     function __construct($table, $fields) {
         $this->table = $table;
@@ -44,10 +50,16 @@ class DBObject
         );
         $res->execute(array($id));
         $row = $res->fetch(PDO::FETCH_ASSOC);
-        $this->id = $id;
+
+        if(!$row) {
+            $this->isDirty = true;
+            return;
+        }
+
         foreach(array_keys($row) as $key) {
             $this->$key = $row[$key];
         }
+        $this->id = $id;
     }
 
     function insert() {
@@ -98,6 +110,26 @@ class DBObject
         $sth->execute($values);
     }
 
+    function find($criteria) {
+        global $db;
+
+        $sets = array();
+        $values = array();
+
+        foreach($criteria as $field=>$value) {
+            $sets[] = $field.'=?';
+            $values[] = $value;
+        }
+        $set = join(" AND ", $sets);
+
+        $sql = 'SELECT * FROM '.$this->table.' WHERE '.$set;
+
+        $sth = $db->prepare($sql);
+        $sth->execute($values);
+
+        return $sth->fetchAll(PDO::FETCH_OBJ);
+    }
+
     function delete() {
         global $db;
         $sth = $db->prepare(
@@ -105,5 +137,13 @@ class DBObject
             $this->table.'_id=?'
         );
         $sth->execute(array($this->id));
+    }
+
+    function getAll($where, $orderby) {
+        global $db;
+        $sql = 'SELECT * FROM '.$this->table.(isset($where) ? " WHERE $where" : "").(isset($orderby) ? " ORDER BY $orderby " : " ");
+        $sth = $db->prepare($sql);
+        $sth->execute();
+        return $sth->fetchAll(PDO::FETCH_OBJ);
     }
 }
